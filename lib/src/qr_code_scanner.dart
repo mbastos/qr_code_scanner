@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -191,9 +192,10 @@ class QRViewController {
             final rawType = args['type'] as String;
             // Raw bytes are only supported by Android.
             final rawBytes = args['rawBytes'] as List<int>?;
+            final byteArray = args['byteArray'] as Uint8List?;
             final format = BarcodeTypesExtension.fromString(rawType);
             if (format != BarcodeFormat.unknown) {
-              final barcode = Barcode(code, format, rawBytes);
+              final barcode = Barcode(code, format, rawBytes, byteArray);
               _scanUpdateController.sink.add(barcode);
             } else {
               throw Exception('Unexpected barcode type $rawType');

@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import com.google.zxing.BarcodeFormat
+import com.google.zxing.ResultMetadataType
 import com.google.zxing.ResultPoint
 import com.journeyapps.barcodescanner.BarcodeCallback
 import com.journeyapps.barcodescanner.BarcodeResult
@@ -202,6 +203,18 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
         return barcodeView
     }
 
+    private fun getBytes(result: BarcodeResult): ByteArray? {
+        val metadata = result.resultMetadata ?: return null
+        val segments = metadata[ResultMetadataType.BYTE_SEGMENTS] ?: return null
+        var byteArray = ByteArray(0)
+        @Suppress("UNCHECKED_CAST")
+        for (seg in segments as Iterable<ByteArray>) {
+            byteArray += seg
+        }
+
+        return if (byteArray.size >= result.text.length) byteArray else null
+    }
+
     private fun startScan(arguments: List<Int>?, result: MethodChannel.Result) {
         val allowedBarcodeTypes = mutableListOf<BarcodeFormat>()
         try {
@@ -218,10 +231,12 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
                 object : BarcodeCallback {
                     override fun barcodeResult(result: BarcodeResult) {
                         if (allowedBarcodeTypes.size == 0 || allowedBarcodeTypes.contains(result.barcodeFormat)) {
+                            val byteArray = getBytes(result)
                             val code = mapOf(
                                     "code" to result.text,
                                     "type" to result.barcodeFormat.name,
-                                    "rawBytes" to result.rawBytes)
+                                    "rawBytes" to result.rawBytes,
+                                    "byteArray" to byteArray)
                             channel.invokeMethod("onRecognizeQR", code)
                         }
 
