@@ -162,8 +162,20 @@ public class QRView:NSObject,FlutterPlatformView {
                                     default:
                                         return
                                 }
+                                var byteArray: [UInt8]? = nil
+                                if #available(iOS 11.0, *) {
+                                    if let descriptor = code.descriptor as? CIQRCodeDescriptor {
+                                        let errorCorrectedPayload = descriptor.errorCorrectedPayload
+                                        var binary = Binary(data: errorCorrectedPayload)
+                                        let symbolVersion = descriptor.symbolVersion
+                                        let decoder = BinaryDecoder(symbolVersion: symbolVersion)
+                                        decoder.decode(&binary)
+                                        byteArray = decoder.bytes
+                                    }
+                                }
+                                          
                                 guard let stringValue = code.stringValue else { continue }
-                               let result = ["code": stringValue, "type": typeString]
+                                let result = ["code": stringValue, "type": typeString, "byteArray": byteArray as Any] as [String : Any]
                                 if allowedBarcodeTypes.count == 0 || allowedBarcodeTypes.contains(code.type) {
                                     self?.channel.invokeMethod("onRecognizeQR", arguments: result)
                                 }
