@@ -3,6 +3,7 @@ package net.touchcapture.qr.flutterqr
 import android.Manifest
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.Camera.CameraInfo
 import android.os.Build
@@ -13,7 +14,6 @@ import com.google.zxing.ResultMetadataType
 import com.google.zxing.ResultPoint
 import com.journeyapps.barcodescanner.BarcodeCallback
 import com.journeyapps.barcodescanner.BarcodeResult
-import com.journeyapps.barcodescanner.BarcodeView
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -21,22 +21,18 @@ import io.flutter.plugin.common.PluginRegistry
 import io.flutter.plugin.platform.PlatformView
 
 
-class QRView(messenger: BinaryMessenger,private val id: Int, private val params: HashMap<String, Any>) :
+class QRView(private val context: Context, messenger: BinaryMessenger, private val id: Int, private val params: HashMap<String, Any>) :
         PlatformView, MethodChannel.MethodCallHandler, PluginRegistry.RequestPermissionsResultListener {
 
     private var isTorchOn: Boolean = false
     private var isPaused: Boolean = false
-    private var barcodeView: BarcodeView? = null
+    private var barcodeView: CustomFramingRectBarcodeView? = null
     private val channel: MethodChannel = MethodChannel(messenger, "net.touchcapture.qr.flutterqr/qrview_$id")
     private var permissionGranted: Boolean = false
 
     init {
         if (Shared.binding != null) {
             Shared.binding!!.addRequestPermissionsResultListener(this)
-        }
-
-        if (Shared.registrar != null) {
-            Shared.registrar!!.addRequestPermissionsResultListener(this)
         }
 
         channel.setMethodCallHandler(this)
@@ -89,6 +85,13 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
             "getCameraInfo" -> getCameraInfo(result)
             "getFlashInfo" -> getFlashInfo(result)
             "getSystemFeatures" -> getSystemFeatures(result)
+            "changeScanArea" -> changeScanArea(
+                call.argument<Double>("scanAreaWidth")!!,
+                call.argument<Double>("scanAreaHeight")!!,
+                call.argument<Double>("cutOutBottomOffset")!!,
+                result,
+            )
+            "invertScan" -> setInvertScan(call.argument<Boolean>("isInvertScan")!!, result)
             else -> result.notImplemented()
         }
     }
@@ -116,8 +119,6 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
             barcodeView!!.resume()
             result.success(settings.requestedCameraId)
         }
-
-
     }
 
     private fun getFlashInfo(result: MethodChannel.Result) {
@@ -191,9 +192,10 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
         return initBarCodeView().apply {}!!
     }
 
-    private fun initBarCodeView(): BarcodeView? {
+    private fun initBarCodeView(): CustomFramingRectBarcodeView? {
         if (barcodeView == null) {
-            barcodeView = BarcodeView(Shared.activity)
+            barcodeView =
+                CustomFramingRectBarcodeView(Shared.activity)
             if (params["cameraFacing"] as Int == 1) {
                 barcodeView?.cameraSettings?.requestedCameraId = CameraInfo.CAMERA_FACING_FRONT
             }
@@ -261,6 +263,39 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
         }
     }
 
+    private fun changeScanArea(
+        dpScanAreaWidth: Double,
+        dpScanAreaHeight: Double,
+        cutOutBottomOffset: Double,
+        result: MethodChannel.Result
+    ) {
+        setScanAreaSize(dpScanAreaWidth, dpScanAreaHeight, cutOutBottomOffset)
+        result.success(true)
+    }
+
+    private fun setInvertScan(isInvert: Boolean, result: MethodChannel.Result) {
+        barcodeView!!.pause()
+        val settings = barcodeView!!.cameraSettings
+        settings.isScanInverted = isInvert
+        barcodeView!!.cameraSettings = settings
+        barcodeView!!.resume();
+    }
+
+    private fun setScanAreaSize(
+        dpScanAreaWidth: Double,
+        dpScanAreaHeight: Double,
+        dpCutOutBottomOffset: Double
+    ) {
+        barcodeView?.setFramingRect(
+            convertDpToPixels(dpScanAreaWidth),
+            convertDpToPixels(dpScanAreaHeight),
+            convertDpToPixels(dpCutOutBottomOffset),
+        )
+    }
+
+    private fun convertDpToPixels(dp: Double) =
+        (dp * context.resources.displayMetrics.density).toInt()
+
     private fun hasCameraPermission(): Boolean {
         return permissionGranted ||
                 Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
@@ -280,7 +315,9 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
                 }
             }
             else -> {
-                result?.error("cameraPermission", "Platform Version to low for camera permission check", null)
+                // We should have permissions on older OS versions
+                permissionGranted = true
+                channel.invokeMethod("onPermissionSet", true)
             }
         }
     }
@@ -289,14 +326,14 @@ class QRView(messenger: BinaryMessenger,private val id: Int, private val params:
                                              permissions: Array<out String>?,
                                              grantResults: IntArray): Boolean {
         if(requestCode == Shared.CAMERA_REQUEST_ID + this.id) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            return if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 permissionGranted = true
                 channel.invokeMethod("onPermissionSet", true)
-                return true
+                true
             } else {
                 permissionGranted = false
                 channel.invokeMethod("onPermissionSet", false)
-                return false
+                false
             }
         }
         return false
